@@ -129,6 +129,34 @@ class AttendanceScreen extends StatefulWidget {
 class _AttendanceScreenState extends State<AttendanceScreen> {
   String _address = "";
   bool _isLoading = false;
+  bool _isLoadingHistory = true;
+  List<dynamic> _history = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchAttendanceHistory();
+  }
+
+  Future<void> _fetchAttendanceHistory() async {
+    setState(() => _isLoadingHistory = true);
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/attendance/${widget.userId}'),
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
+        setState(() {
+          _history = data;
+        });
+      }
+    } catch (e) {
+      _showError('No se pudo cargar el historial');
+    } finally {
+      if (mounted) setState(() => _isLoadingHistory = false);
+    }
+  }
 
   Future<Position> _determinePosition() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -174,6 +202,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         setState(() {
           _address = data['address'];
         });
+        await _fetchAttendanceHistory();
       } else {
         _showError(data['detail'] ?? 'No se pudo registrar la asistencia');
       }
@@ -193,50 +222,98 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Registro de Asistencia')),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              ElevatedButton(
-                onPressed: _isLoading ? null : _registerAttendance,
-                child: Text(
-                  _isLoading
-                      ? 'Obteniendo ubicación...'
-                      : 'Registrar asistencia',
-                  style: const TextStyle(fontSize: 16, color: Colors.white),
+      appBar: AppBar(
+        title: const Text('Registro de Asistencia'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _fetchAttendanceHistory,
+            tooltip: 'Actualizar historial',
+          ),
+        ],
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          children: [
+            ElevatedButton(
+              onPressed: _isLoading ? null : _registerAttendance,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF23478A),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
                 ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF23478A),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 12,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(30),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(30),
+                ),
+              ),
+              child: Text(
+                _isLoading ? 'Obteniendo ubicación...' : 'Registrar asistencia',
+                style: const TextStyle(fontSize: 16, color: Colors.white),
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (_address.isNotEmpty)
+              Card(
+                color: Colors.blue.shade50,
+                elevation: 2,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Text(
+                    "📍 Último registro:\n$_address",
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 14, height: 1.4),
                   ),
                 ),
               ),
-              const SizedBox(height: 24),
-              if (_address.isNotEmpty)
-                Card(
-                  elevation: 3,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Text(
-                      "📍 $_address",
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 15, height: 1.4),
+            const SizedBox(height: 20),
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Historial de Asistencias',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+            const Divider(),
+            Expanded(
+              child: _isLoadingHistory
+                  ? const Center(child: CircularProgressIndicator())
+                  : _history.isEmpty
+                  ? const Center(
+                      child: Text('Aún no tienes asistencias registradas.'),
+                    )
+                  : ListView.builder(
+                      itemCount: _history.length,
+                      itemBuilder: (context, index) {
+                        final item = _history[index];
+                        return Card(
+                          margin: const EdgeInsets.symmetric(vertical: 6),
+                          child: ListTile(
+                            leading: const Icon(
+                              Icons.location_on,
+                              color: Color(0xFF23478A),
+                            ),
+                            title: Text(
+                              item['address'] ?? 'Dirección no disponible',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: Text(
+                              item['created_at'] != null &&
+                                      item['created_at'] != 'None'
+                                  ? 'Fecha: ${item['created_at']}'
+                                  : 'Lat: ${item['latitude']}, Lng: ${item['longitude']}',
+                            ),
+                          ),
+                        );
+                      },
                     ),
-                  ),
-                ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
